@@ -20,30 +20,24 @@
 
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 KDIR ?= $(KERNEL_SRC)
-
 # Ensure build intermediates are in OUT_DIR instead of alongside the source
 M ?= $(shell pwd)
-
 ifeq ($(KDIR),)
     $(error Must specify KDIR to point to the kernel to target))
 endif
 
-
 #
 # Pixel integration configuration values
 #
-
 # Core kbase configuration options
 CONFIG_MALI_EXPERT=y
 CONFIG_MALI_MIDGARD_DVFS=y
-
 # Pixel integration specific configuration options
 CONFIG_MALI_PLATFORM_NAME="pixel"
 CONFIG_MALI_PIXEL_GPU_QOS=y
 CONFIG_MALI_PIXEL_GPU_BTS=y
 CONFIG_MALI_PIXEL_GPU_THERMAL=y
 CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING=y
-
 
 #
 # Default configuration values
@@ -54,9 +48,18 @@ CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING=y
 
 CONFIG_MALI_MIDGARD ?= m
 ifeq ($(CONFIG_MALI_MIDGARD),m)
+    CONFIG_MALI_PLATFORM_NAME ?= "devicetree"
     CONFIG_MALI_GATOR_SUPPORT ?= y
     CONFIG_MALI_ARBITRATION ?= n
     CONFIG_MALI_PARTITION_MANAGER ?= n
+
+    ifeq ($(origin CONFIG_MALI_ABITER_MODULES), undefined)
+        CONFIG_MALI_ARBITER_MODULES := $(CONFIG_MALI_ARBITRATION)
+    endif
+
+    ifeq ($(origin CONFIG_MALI_GPU_POWER_MODULES), undefined)
+        CONFIG_MALI_GPU_POWER_MODULES := $(CONFIG_MALI_ARBITRATION)
+    endif
 
     ifneq ($(CONFIG_MALI_NO_MALI),y)
         # Prevent misuse when CONFIG_MALI_NO_MALI=y
@@ -75,7 +78,7 @@ ifeq ($(CONFIG_MALI_MIDGARD),m)
         CONFIG_MALI_DMA_BUF_LEGACY_COMPAT = n
     endif
 
-    ifeq ($(CONFIG_BSP_HAS_HYPERVISOR),y)
+    ifeq ($(CONFIG_XEN),y)
         ifneq ($(CONFIG_MALI_ARBITRATION), n)
             CONFIG_MALI_XEN ?= m
         endif
@@ -155,6 +158,8 @@ ifeq ($(CONFIG_MALI_MIDGARD),m)
 else
     # Prevent misuse when CONFIG_MALI_MIDGARD=n
     CONFIG_MALI_ARBITRATION = n
+    CONFIG_MALI_ARBITER_MODULES = n
+    CONFIG_MALI_GPU_POWER_MODULES = n
     CONFIG_MALI_KUTF = n
     CONFIG_MALI_KUTF_IRQ_TEST = n
     CONFIG_MALI_KUTF_CLK_RATE_TRACE = n
@@ -168,6 +173,8 @@ CONFIGS := \
     CONFIG_MALI_DMA_FENCE \
     CONFIG_MALI_ARBITER_SUPPORT \
     CONFIG_MALI_ARBITRATION \
+    CONFIG_MALI_ARBITER_MODULES \
+    CONFIG_MALI_GPU_POWER_MODULES \
     CONFIG_MALI_PARTITION_MANAGER \
     CONFIG_MALI_REAL_HW \
     CONFIG_MALI_GEM5_BUILD \
@@ -205,7 +212,6 @@ CONFIGS += \
     CONFIG_MALI_PIXEL_GPU_THERMAL \
     CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING
 
-
 #
 # MAKE_ARGS to pass the custom CONFIGs on out-of-tree build
 #
@@ -218,6 +224,8 @@ MAKE_ARGS := $(foreach config,$(CONFIGS), \
                         $(value config)=$(value $(value config)), \
                         $(value config)=n))
 
+MAKE_ARGS += CONFIG_MALI_PLATFORM_NAME=$(CONFIG_MALI_PLATFORM_NAME)
+
 #
 # EXTRA_CFLAGS to define the custom CONFIGs on out-of-tree build
 #
@@ -227,6 +235,8 @@ MAKE_ARGS := $(foreach config,$(CONFIGS), \
 EXTRA_CFLAGS := $(foreach config,$(CONFIGS), \
                     $(if $(filter y m,$(value $(value config))), \
                         -D$(value config)=1))
+
+EXTRA_CFLAGS += -DCONFIG_MALI_PLATFORM_NAME=$(CONFIG_MALI_PLATFORM_NAME)
 
 #
 # KBUILD_EXTRA_SYMBOLS to prevent warnings about unknown functions

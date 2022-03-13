@@ -394,15 +394,15 @@ static void kbase_fence_wait_callback(struct sync_fence *fence,
 		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
 
 	/* To prevent a potential deadlock we schedule the work onto the
-	 * job_done_worker kthread
+	 * job_done_wq workqueue
 	 *
 	 * The issue is that we may signal the timeline while holding
 	 * kctx->jctx.lock and the callbacks are run synchronously from
 	 * sync_timeline_signal. So we simply defer the work.
 	 */
 
-	kthread_init_work(&katom->work, kbase_sync_fence_wait_worker);
-	kthread_queue_work(&kctx->kbdev->job_done_worker, &katom->work);
+	INIT_WORK(&katom->work, kbase_sync_fence_wait_worker);
+	queue_work(kctx->jctx.job_done_wq, &katom->work);
 }
 
 int kbase_sync_fence_in_wait(struct kbase_jd_atom *katom)
@@ -423,9 +423,8 @@ int kbase_sync_fence_in_wait(struct kbase_jd_atom *katom)
 		/* We should cause the dependent jobs in the bag to be failed,
 		 * to do this we schedule the work queue to complete this job
 		 */
-		kthread_init_work(&katom->work, kbase_sync_fence_wait_worker);
-		kthread_queue_work(&katom->kctx->kbdev->job_done_worker, &katom->work);
-
+		INIT_WORK(&katom->work, kbase_sync_fence_wait_worker);
+		queue_work(katom->kctx->jctx.job_done_wq, &katom->work);
 	}
 
 	return 1;
@@ -446,7 +445,7 @@ void kbase_sync_fence_in_cancel_wait(struct kbase_jd_atom *katom)
 	kbasep_remove_waiting_soft_job(katom);
 	kbase_finish_soft_job(katom);
 
-	if (jd_done_nolock(katom, NULL))
+	if (jd_done_nolock(katom, true))
 		kbase_js_sched_all(katom->kctx->kbdev);
 }
 
@@ -469,12 +468,19 @@ void kbase_sync_fence_in_remove(struct kbase_jd_atom *katom)
 int kbase_sync_fence_in_info_get(struct kbase_jd_atom *katom,
 				 struct kbase_sync_fence_info *info)
 {
+	u32 string_len;
+
 	if (!katom->fence)
 		return -ENOENT;
 
 	info->fence = katom->fence;
 	info->status = kbase_fence_get_status(katom->fence);
-	strlcpy(info->name, katom->fence->name, sizeof(info->name));
+
+	string_len = strscpy(info->name, katom->fence->name, sizeof(info->name));
+	string_len += sizeof(char);
+	/* Make sure that the source string fit into the buffer. */
+	KBASE_DEBUG_ASSERT(string_len <= sizeof(info->name));
+	CSTD_UNUSED(string_len);
 
 	return 0;
 }
@@ -482,12 +488,19 @@ int kbase_sync_fence_in_info_get(struct kbase_jd_atom *katom,
 int kbase_sync_fence_out_info_get(struct kbase_jd_atom *katom,
 				 struct kbase_sync_fence_info *info)
 {
+	u32 string_len;
+
 	if (!katom->fence)
 		return -ENOENT;
 
 	info->fence = katom->fence;
 	info->status = kbase_fence_get_status(katom->fence);
-	strlcpy(info->name, katom->fence->name, sizeof(info->name));
+
+	string_len = strscpy(info->name, katom->fence->name, sizeof(info->name));
+	string_len += sizeof(char);
+	/* Make sure that the source string fit into the buffer. */
+	KBASE_DEBUG_ASSERT(string_len <= sizeof(info->name));
+	CSTD_UNUSED(string_len);
 
 	return 0;
 }
